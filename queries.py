@@ -13,34 +13,36 @@ from langchain.agents.agent_toolkits import create_vectorstore_agent, VectorStor
 import PyPDF2
 import time
 from contextlib import contextmanager
+from tenacity import retry, wait_fixed, stop_after_attempt
 
 # Set OpenAI API key and initialize language model
-os.environ['OPENAI_API_KEY'] = "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"
+os.environ['OPENAI_API_KEY'] = "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"
 llm = OpenAI(temperature=0.1, verbose=True)
 embeddings = OpenAIEmbeddings()
 
 # Function to create a connection to the SQLite database
 @contextmanager
+@retry(wait=wait_fixed(0.1), stop=stop_after_attempt(3))
 def sqlite_connection():
     conn = sqlite3.connect("pdfs_database.db", timeout=5)
-    cursor = conn.cursor()  # Create the cursor inside the context manager
-    try:
-        yield conn, cursor
-    finally:
-        cursor.close()
-        conn.close()
+    cursor = conn.cursor()
+    yield conn, cursor
+    cursor.close()
+    conn.close()
 
 # Function to store PDF file in the database
+@retry(wait=wait_fixed(0.1), stop=stop_after_attempt(3))
 def store_pdf_file(file, cursor):
     file_data = file.getvalue()
     name = file.name
     cursor.execute('''
         INSERT INTO pdfs (name, file_data) VALUES (?, ?)
     ''', (name, file_data))
-    cursor.connection.commit()  # Use cursor.connection.commit() to commit changes
+    cursor.connection.commit()
     return name
 
 # Function to load PDF file from the database
+@retry(wait=wait_fixed(0.1), stop=stop_after_attempt(3))
 def load_pdf_file(name, cursor):
     cursor.execute('''
         SELECT file_data FROM pdfs WHERE name = ?
