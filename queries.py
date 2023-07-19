@@ -2,6 +2,8 @@
 import os
 import requests
 import streamlit as st
+import sqlite3
+from io import BytesIO
 from streamlit_lottie import st_lottie
 from langchain.llms import OpenAI
 from langchain.document_loaders import PyPDFLoader
@@ -9,23 +11,47 @@ from langchain.vectorstores import Chroma
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.agents.agent_toolkits import create_vectorstore_agent, VectorStoreToolkit, VectorStoreInfo
 import PyPDF2
+import time
+from contextlib import contextmanager
 
 # Set OpenAI API key and initialize language model
-os.environ['OPENAI_API_KEY'] = "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"
+os.environ['OPENAI_API_KEY'] = "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"
 llm = OpenAI(temperature=0.1, verbose=True)
 embeddings = OpenAIEmbeddings()
 
-# Set directory for storing PDF files
-dir = "C:/Users/abhin/Downloads/Documents/Pwc Project/pdfs"
+# Function to create a connection to the SQLite database
+@contextmanager
+def sqlite_connection():
+    conn = sqlite3.connect("pdfs_database.db", timeout=5)
+    cursor = conn.cursor()  # Create the cursor inside the context manager
+    try:
+        yield conn, cursor
+    finally:
+        cursor.close()
+        conn.close()
 
-# Function to store PDF file
-def store_pdf_file(file, dir):
-    file_path = os.path.join(dir, file.name)
-    with open(file_path, 'wb') as fhand:
-        fhand.write(file.getbuffer())
-    return file_path
+# Function to store PDF file in the database
+def store_pdf_file(file, cursor):
+    file_data = file.getvalue()
+    name = file.name
+    cursor.execute('''
+        INSERT INTO pdfs (name, file_data) VALUES (?, ?)
+    ''', (name, file_data))
+    cursor.connection.commit()  # Use cursor.connection.commit() to commit changes
+    return name
 
-#Function to load Lottie animation file from URL
+# Function to load PDF file from the database
+def load_pdf_file(name, cursor):
+    cursor.execute('''
+        SELECT file_data FROM pdfs WHERE name = ?
+    ''', (name,))
+    row = cursor.fetchone()
+    if row:
+        return BytesIO(row[0])
+    else:
+        return None
+
+# Function to load Lottie animation file from URL
 def load_lottieurl(url):
     r = requests.get(url)
     if r.status_code != 200:
@@ -56,13 +82,16 @@ if not st.session_state['uploaded']:
 
     if input_files and all([file is not None for file in input_files]):
         with st.spinner("Analyzing documents..."):
-            merged_pdf_path = os.path.join(dir, "merged.pdf")
+            pdf_dir = "C:/Users/abhin/Downloads/Documents/Pwc Project/pdfs"  # Directory for storing PDF files
+            merged_pdf_path = os.path.join(pdf_dir, "merged.pdf")
             merged_pdf = PyPDF2.PdfMerger()
 
-            for input_file in input_files:
-                if input_file is not None:
-                    path = store_pdf_file(input_file, dir)
-                    merged_pdf.append(path)
+            with sqlite_connection() as (conn, cursor):
+                for input_file in input_files:
+                    if input_file is not None:
+                        name = store_pdf_file(input_file, cursor)  # Store in the database
+                        pdf_data = load_pdf_file(name, cursor)  # Load from the database
+                    merged_pdf.append(pdf_data)
 
             merged_pdf.write(merged_pdf_path)
 
