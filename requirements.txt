@@ -5,3 +5,5 @@ streamlit_lottie
 pypdf2
 pypdf
 chromadb
+SQLAlchemy
+SQLite
