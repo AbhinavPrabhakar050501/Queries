@@ -1,0 +1,7 @@
+langchain
+openai
+streamlit
+streamlit_lottie
+pypdf2
+pypdf
+chromadb
